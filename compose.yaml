@@ -1,0 +1,22 @@
+services:
+  bt-gateway:
+    image: ghcr.io/ys-chung/bridgething-bt-internet:latest
+    # build: .   # uncomment to build locally instead of pulling
+    container_name: bt-gateway
+    restart: unless-stopped
+    # Bluetooth sockets can only be opened from the host network namespace.
+    # Nothing listens on a port.
+    network_mode: host
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/tmp]
+    environment:
+      CARTHING_MAC: ${CARTHING_MAC:?set CARTHING_MAC in .env}
+      TZ: ${TZ:-UTC}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - data:/data
+
+volumes:
+  data:

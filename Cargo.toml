@@ -1,0 +1,28 @@
+[package]
+name = "bt-gateway"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+
+# Pinned to the commit that matches the daemon version on the Car Thing (v0.13.1).
+# Bump `rev` together with the device's bridgething version.
+[dependencies]
+bridgething-companion = { git = "https://github.com/JoeyEamigh/bridgething", rev = "1d03e1b8b6cc9bea41e86529047b78ab7b44678b", features = ["native-io"] }
+bridgething-gateway = { git = "https://github.com/JoeyEamigh/bridgething", rev = "1d03e1b8b6cc9bea41e86529047b78ab7b44678b" }
+
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+iana-time-zone = "0.1"
+serde_json = "1"
+tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.23", features = ["v7"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+bluer = { version = "0.17.4", default-features = false, features = ["rfcomm"] }
+
+[profile.release]
+strip = true
+lto = "thin"
