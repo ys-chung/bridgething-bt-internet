@@ -19,6 +19,7 @@ use bridgething_companion::{
 use bridgething_gateway::transport::FramedConnector;
 use tracing_subscriber::EnvFilter;
 
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 const FIRST_RETRY: Duration = Duration::from_secs(2);
 const RETRY_CAP: Duration = Duration::from_secs(30);
 const LINK_POLL: Duration = Duration::from_secs(2);
@@ -74,10 +75,16 @@ async fn main() -> anyhow::Result<()> {
 async fn keep_linked(settings: &Settings, session: &Arc<CompanionSession>) -> anyhow::Result<()> {
   let device_id = format!("bt:{}", settings.mac);
   let mut backoff = FIRST_RETRY;
+  let mut failures: u32 = 0;
   loop {
-    match rfcomm::connect(&settings.mac, settings.channel).await {
+    // The kernel can leave an RFCOMM connect pending for minutes after the
+    // link drops; dropping the future closes the socket so the next attempt
+    // pages the Car Thing afresh.
+    let attempt = tokio::time::timeout(CONNECT_TIMEOUT, rfcomm::connect(&settings.mac, settings.channel)).await;
+    match attempt.unwrap_or_else(|_| Err(anyhow::anyhow!("connect timed out after {CONNECT_TIMEOUT:?}"))) {
       Ok(stream) => {
-        tracing::info!("rfcomm link to the car thing is up");
+        tracing::info!(failed_attempts = failures, "rfcomm link to the car thing is up");
+        failures = 0;
         let device = LinkDevice {
           id: device_id.clone(),
           name: "car thing".to_owned(),
@@ -89,7 +96,15 @@ async fn keep_linked(settings: &Settings, session: &Arc<CompanionSession>) -> an
         session.disconnect_direct(&device_id).await;
         tracing::info!("rfcomm link to the car thing is down");
       }
-      Err(error) => tracing::debug!(%error, "car thing not reachable"),
+      Err(error) => {
+        failures += 1;
+        // Log the first failure and then every 20th, so a long absence stays quiet.
+        if failures == 1 || failures % 20 == 0 {
+          tracing::info!(%error, failed_attempts = failures, "car thing not reachable; retrying");
+        } else {
+          tracing::debug!(%error, failed_attempts = failures, "car thing not reachable");
+        }
+      }
     }
     tokio::time::sleep(backoff).await;
     backoff = (backoff * 2).min(RETRY_CAP);
